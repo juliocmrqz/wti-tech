@@ -107,6 +107,12 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
+
+class ProfileUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+
 # Keep original models for backward compatibility, but add validation where used
 # New validated models are imported from validation.py
 
@@ -511,6 +517,59 @@ async def delete_post(post_id: int, current_user: dict = Depends(get_current_use
             additionalData=f"Failed to delete post: {str(e)}"
         )
 
+
+@app.get("/api/users/{user_id}/posts", response_model=APIResponseWithList)
+async def get_user_posts(user_id: int, limit: int = 50):
+    """Get posts by a specific user."""
+    try:
+        # Validate parameters
+        validated_user_id = validate_integer_id(user_id, "User ID")
+        validated_limit, _ = validate_pagination_params(limit, 0)
+
+        # Get posts by user with author information
+        posts = await database.fetch_all("""
+            SELECT 
+                p.id,
+                p.title,
+                p.content,
+                CONCAT(u.first_name, ' ', u.last_name) as author_name,
+                p.user_id,
+                p.created_at,
+                p.updated_at
+            FROM posts p
+            JOIN users u ON p.user_id = u.id
+            WHERE p.user_id = :user_id
+            ORDER BY p.created_at DESC
+            LIMIT :limit
+        """, {"user_id": validated_user_id, "limit": validated_limit})
+
+        # Convert to list of dictionaries
+        result = []
+        for post in posts:
+            result.append({
+                "id": post["id"],
+                "title": post["title"],
+                "content": post["content"],
+                "author_name": post["author_name"],
+                "user_id": post["user_id"],
+                "created_at": post["created_at"].isoformat() + "Z",
+                "updated_at": post["updated_at"].isoformat() + "Z" if post["updated_at"] else None
+            })
+
+        return APIResponseWithList(
+            success=True,
+            message=None,
+            additionalData=None,
+            data=result
+        )
+    except Exception as e:
+        return APIResponseWithList(
+            success=False,
+            message=None,
+            additionalData=f"Failed to fetch user posts: {str(e)}",
+            data=[]
+        )
+
 # Auth endpoints
 
 
@@ -657,6 +716,92 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
             success=False,
             message=None,
             additionalData=f"Failed to get user info: {str(e)}",
+            data=None
+        )
+
+
+@app.put("/api/auth/profile", response_model=APIResponseWithData)
+async def update_profile(
+    profile_data: ProfileUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update user profile information."""
+    try:
+        # Get only the fields that were provided (not None)
+        update_data = {}
+        if profile_data.first_name is not None:
+            update_data["first_name"] = profile_data.first_name.strip()
+        if profile_data.last_name is not None:
+            update_data["last_name"] = profile_data.last_name.strip()
+        if profile_data.email is not None:
+            update_data["email"] = profile_data.email.strip().lower()
+
+        if not update_data:
+            return APIResponseWithData(
+                success=False,
+                message=None,
+                additionalData="No valid fields to update",
+                data=None
+            )
+
+        # Check if email is being updated and if it's already taken
+        if "email" in update_data and update_data["email"] != current_user["email"]:
+            existing_user = await database.fetch_one(
+                "SELECT id FROM users WHERE email = :email AND id != :user_id",
+                {"email": update_data["email"], "user_id": current_user["id"]}
+            )
+            if existing_user:
+                return APIResponseWithData(
+                    success=False,
+                    message=None,
+                    additionalData="Email is already in use by another account",
+                    data=None
+                )
+
+        # Build dynamic update query
+        set_clauses = []
+        params = {"user_id": current_user["id"]}
+
+        for field, value in update_data.items():
+            set_clauses.append(f"{field} = :{field}")
+            params[field] = value
+
+        if set_clauses:
+            query = f"""
+                UPDATE users 
+                SET {", ".join(set_clauses)}
+                WHERE id = :user_id
+                RETURNING id, username, email, first_name, last_name, is_active
+            """
+
+            updated_user = await database.fetch_one(query, params)
+
+            return APIResponseWithData(
+                success=True,
+                message={
+                    "id": updated_user["id"],
+                    "username": updated_user["username"],
+                    "email": updated_user["email"],
+                    "first_name": updated_user["first_name"],
+                    "last_name": updated_user["last_name"],
+                    "is_active": updated_user["is_active"]
+                },
+                additionalData=None,
+                data=None
+            )
+        else:
+            return APIResponseWithData(
+                success=False,
+                message=None,
+                additionalData="No fields to update",
+                data=None
+            )
+
+    except Exception as e:
+        return APIResponseWithData(
+            success=False,
+            message=None,
+            additionalData=f"Failed to update profile: {str(e)}",
             data=None
         )
 

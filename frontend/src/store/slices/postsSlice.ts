@@ -30,8 +30,10 @@ export interface Post {
 
 export interface PostsState {
   posts: Post[]
+  userPosts: Post[]
   currentPost: Post | null
   isLoading: boolean
+  isLoadingUserPosts: boolean
   error: string | null
   successMessage: string | null
   pagination: {
@@ -43,8 +45,10 @@ export interface PostsState {
 
 const initialState: PostsState = {
   posts: [],
+  userPosts: [],
   currentPost: null,
   isLoading: false,
+  isLoadingUserPosts: false,
   error: null,
   successMessage: null,
   pagination: {
@@ -85,6 +89,24 @@ export const fetchPost = createAsyncThunk(
       }
 
       return apiResponse.message
+    } catch (error) {
+      return rejectWithValue('Network error')
+    }
+  }
+)
+
+export const fetchUserPosts = createAsyncThunk(
+  'posts/fetchUserPosts',
+  async ({ userId, limit = 50 }: { userId: number; limit?: number }, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`/api/users/${userId}/posts?limit=${limit}`)
+      const apiResponse: APIResponseWithList = await response.json()
+
+      if (!apiResponse.success) {
+        return rejectWithValue(apiResponse.additionalData || 'Failed to fetch user posts')
+      }
+
+      return apiResponse.data || []
     } catch (error) {
       return rejectWithValue('Network error')
     }
@@ -226,6 +248,19 @@ const postsSlice = createSlice({
       .addCase(fetchPost.rejected, (state, action) => {
         state.isLoading = false
         state.error = (action.payload as string) || 'Failed to fetch post'
+      })
+      // Fetch user posts
+      .addCase(fetchUserPosts.pending, (state) => {
+        state.isLoadingUserPosts = true
+        state.error = null
+      })
+      .addCase(fetchUserPosts.fulfilled, (state, action) => {
+        state.isLoadingUserPosts = false
+        state.userPosts = action.payload
+      })
+      .addCase(fetchUserPosts.rejected, (state, action) => {
+        state.isLoadingUserPosts = false
+        state.error = (action.payload as string) || 'Failed to fetch user posts'
       })
       // Create post
       .addCase(createPost.pending, (state) => {

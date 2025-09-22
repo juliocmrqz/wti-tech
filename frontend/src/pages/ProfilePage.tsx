@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Box,
   Typography,
@@ -14,11 +14,12 @@ import {
   Tab,
   Tabs
 } from '@mui/material'
-import { Edit, Save, Cancel, Article, Email, CalendarToday } from '@mui/icons-material'
+import { Edit, Save, Cancel, Article, Email, CalendarToday, Refresh } from '@mui/icons-material'
 import { useSelector, useDispatch } from 'react-redux'
 import { useNavigate } from 'react-router-dom'
 import { RootState, AppDispatch } from '../store/store'
-import { logout } from '../store/slices/authSlice'
+import { logout, updateProfile, clearSuccessMessage, clearError } from '../store/slices/authSlice'
+import { fetchUserPosts } from '../store/slices/postsSlice'
 
 interface TabPanelProps {
   children?: React.ReactNode
@@ -45,21 +46,59 @@ function TabPanel(props: TabPanelProps) {
 const ProfilePage: React.FC = () => {
   const navigate = useNavigate()
   const dispatch = useDispatch<AppDispatch>()
-  const { user, isLoading } = useSelector((state: RootState) => state.auth)
-  const { posts } = useSelector((state: RootState) => state.posts)
+  const { user, isLoading, error, successMessage } = useSelector((state: RootState) => state.auth)
+  const { userPosts, isLoadingUserPosts } = useSelector((state: RootState) => state.posts)
 
   const [tabValue, setTabValue] = useState(0)
   const [isEditing, setIsEditing] = useState(false)
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
   const [editFormData, setEditFormData] = useState({
     first_name: user?.first_name || '',
     last_name: user?.last_name || '',
     email: user?.email || ''
   })
 
-  const userPosts = posts.filter((post) => post.user_id === user?.id)
+  // Fetch user posts when user is available
+  useEffect(() => {
+    if (user?.id) {
+      dispatch(fetchUserPosts({ userId: user.id }))
+    }
+  }, [user?.id, dispatch])
+
+  // Auto-clear success message after 5 seconds
+  useEffect(() => {
+    if (successMessage) {
+      const timer = setTimeout(() => {
+        dispatch(clearSuccessMessage())
+      }, 5000)
+
+      return () => clearTimeout(timer)
+    }
+  }, [successMessage, dispatch])
 
   const handleTabChange = (_: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue)
+  }
+
+  const validateForm = () => {
+    const errors: Record<string, string> = {}
+
+    if (!editFormData.first_name.trim()) {
+      errors.first_name = 'First name is required'
+    }
+
+    if (!editFormData.last_name.trim()) {
+      errors.last_name = 'Last name is required'
+    }
+
+    if (!editFormData.email.trim()) {
+      errors.email = 'Email is required'
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editFormData.email)) {
+      errors.email = 'Please enter a valid email address'
+    }
+
+    setValidationErrors(errors)
+    return Object.keys(errors).length === 0
   }
 
   const handleEditToggle = () => {
@@ -70,14 +109,57 @@ const ProfilePage: React.FC = () => {
         last_name: user?.last_name || '',
         email: user?.email || ''
       })
+      setValidationErrors({})
     }
     setIsEditing(!isEditing)
   }
 
-  const handleSaveProfile = () => {
-    // TODO: Implement profile update API call
-    console.log('Save profile:', editFormData)
-    setIsEditing(false)
+  const handleInputChange = (field: string, value: string) => {
+    setEditFormData((prev) => ({
+      ...prev,
+      [field]: value
+    }))
+
+    // Clear validation error when user starts typing
+    if (validationErrors[field]) {
+      setValidationErrors((prev) => {
+        const newErrors = { ...prev }
+        delete newErrors[field]
+        return newErrors
+      })
+    }
+  }
+
+  const handleSaveProfile = async () => {
+    if (!validateForm()) {
+      return
+    }
+
+    try {
+      // Only send fields that have changed
+      const updateData: { first_name?: string; last_name?: string; email?: string } = {}
+
+      if (editFormData.first_name !== user?.first_name) {
+        updateData.first_name = editFormData.first_name.trim()
+      }
+      if (editFormData.last_name !== user?.last_name) {
+        updateData.last_name = editFormData.last_name.trim()
+      }
+      if (editFormData.email !== user?.email) {
+        updateData.email = editFormData.email.trim()
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        setIsEditing(false)
+        return
+      }
+
+      await dispatch(updateProfile(updateData)).unwrap()
+      setIsEditing(false)
+    } catch (error) {
+      console.error('Failed to update profile:', error)
+      // Error is handled by Redux state
+    }
   }
 
   const handleLogout = () => {
@@ -113,6 +195,18 @@ const ProfilePage: React.FC = () => {
       <Typography variant="h4" component="h1" gutterBottom>
         My Profile
       </Typography>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }} onClose={() => dispatch(clearError())}>
+          {error}
+        </Alert>
+      )}
+
+      {successMessage && (
+        <Alert severity="success" sx={{ mb: 3 }} onClose={() => dispatch(clearSuccessMessage())}>
+          {successMessage}
+        </Alert>
+      )}
 
       <Grid container spacing={3}>
         {/* Profile Overview */}
@@ -214,12 +308,10 @@ const ProfilePage: React.FC = () => {
                         fullWidth
                         label="First Name"
                         value={editFormData.first_name}
-                        onChange={(e) =>
-                          setEditFormData((prev) => ({
-                            ...prev,
-                            first_name: e.target.value
-                          }))
-                        }
+                        onChange={(e) => handleInputChange('first_name', e.target.value)}
+                        error={!!validationErrors.first_name}
+                        helperText={validationErrors.first_name}
+                        required
                       />
                     </Grid>
                     <Grid item xs={12} sm={6}>
@@ -227,12 +319,10 @@ const ProfilePage: React.FC = () => {
                         fullWidth
                         label="Last Name"
                         value={editFormData.last_name}
-                        onChange={(e) =>
-                          setEditFormData((prev) => ({
-                            ...prev,
-                            last_name: e.target.value
-                          }))
-                        }
+                        onChange={(e) => handleInputChange('last_name', e.target.value)}
+                        error={!!validationErrors.last_name}
+                        helperText={validationErrors.last_name}
+                        required
                       />
                     </Grid>
                     <Grid item xs={12}>
@@ -241,12 +331,10 @@ const ProfilePage: React.FC = () => {
                         label="Email"
                         type="email"
                         value={editFormData.email}
-                        onChange={(e) =>
-                          setEditFormData((prev) => ({
-                            ...prev,
-                            email: e.target.value
-                          }))
-                        }
+                        onChange={(e) => handleInputChange('email', e.target.value)}
+                        error={!!validationErrors.email}
+                        helperText={validationErrors.email}
+                        required
                       />
                     </Grid>
                   </Grid>
@@ -292,11 +380,26 @@ const ProfilePage: React.FC = () => {
             </TabPanel>
 
             <TabPanel value={tabValue} index={1}>
-              <Typography variant="h6" gutterBottom>
-                My Posts ({userPosts.length})
-              </Typography>
+              <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+                <Typography variant="h6">My Posts ({userPosts.length})</Typography>
+                <Button
+                  variant="outlined"
+                  startIcon={<Refresh />}
+                  onClick={() => user?.id && dispatch(fetchUserPosts({ userId: user.id }))}
+                  disabled={isLoadingUserPosts}
+                  size="small"
+                >
+                  Refresh
+                </Button>
+              </Box>
 
-              {userPosts.length === 0 ? (
+              {isLoadingUserPosts ? (
+                <Box textAlign="center" py={4}>
+                  <Typography variant="body1" color="text.secondary">
+                    Loading your posts...
+                  </Typography>
+                </Box>
+              ) : userPosts.length === 0 ? (
                 <Box textAlign="center" py={4}>
                   <Typography variant="body1" color="text.secondary" mb={2}>
                     You haven't created any posts yet.

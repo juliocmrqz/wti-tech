@@ -26,6 +26,7 @@ export interface AuthState {
   isAuthenticated: boolean
   isLoading: boolean
   error: string | null
+  successMessage: string | null
 }
 
 const initialState: AuthState = {
@@ -33,7 +34,8 @@ const initialState: AuthState = {
   token: localStorage.getItem('token'),
   isAuthenticated: false,
   isLoading: !!localStorage.getItem('token'), // Loading if token exists (need to validate)
-  error: null
+  error: null,
+  successMessage: null
 }
 
 // Async thunks
@@ -131,6 +133,42 @@ export const getCurrentUser = createAsyncThunk(
   }
 )
 
+export const updateProfile = createAsyncThunk(
+  'auth/updateProfile',
+  async (
+    profileData: { first_name?: string; last_name?: string; email?: string },
+    { rejectWithValue, getState }
+  ) => {
+    try {
+      const state = getState() as { auth: AuthState }
+      const token = state.auth.token
+
+      if (!token) {
+        return rejectWithValue('No token found')
+      }
+
+      const response = await fetch('/api/auth/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(profileData)
+      })
+
+      const apiResponse: APIResponseWithData = await response.json()
+
+      if (!apiResponse.success) {
+        return rejectWithValue(apiResponse.additionalData || 'Failed to update profile')
+      }
+
+      return apiResponse.message
+    } catch (error) {
+      return rejectWithValue('Network error')
+    }
+  }
+)
+
 const authSlice = createSlice({
   name: 'auth',
   initialState,
@@ -140,16 +178,21 @@ const authSlice = createSlice({
       state.token = null
       state.isAuthenticated = false
       state.error = null
+      state.successMessage = null
       localStorage.removeItem('token')
     },
     clearError: (state) => {
       state.error = null
+    },
+    clearSuccessMessage: (state) => {
+      state.successMessage = null
     },
     setCredentials: (state, action: PayloadAction<{ user: User; token: string }>) => {
       state.user = action.payload.user
       state.token = action.payload.token
       state.isAuthenticated = true
       state.error = null
+      state.successMessage = null
     }
   },
   extraReducers: (builder) => {
@@ -202,8 +245,25 @@ const authSlice = createSlice({
         state.token = null
         localStorage.removeItem('token')
       })
+      // Update profile
+      .addCase(updateProfile.pending, (state) => {
+        state.isLoading = true
+        state.error = null
+        state.successMessage = null
+      })
+      .addCase(updateProfile.fulfilled, (state, action) => {
+        state.isLoading = false
+        state.user = action.payload
+        state.successMessage = 'Profile updated successfully!'
+        state.error = null
+      })
+      .addCase(updateProfile.rejected, (state, action) => {
+        state.isLoading = false
+        state.error = action.payload as string
+        state.successMessage = null
+      })
   }
 })
 
-export const { logout, clearError, setCredentials } = authSlice.actions
+export const { logout, clearError, clearSuccessMessage, setCredentials } = authSlice.actions
 export default authSlice.reducer
