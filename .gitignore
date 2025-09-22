@@ -1,0 +1,61 @@
+# Local development environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Build outputs
+build/
+dist/
+*.egg-info/
+
+# Docker
+.docker/
+
+# AWS
+.aws/
+aws-exports.js
+
+# Testing
+coverage/
+.nyc_output/
+.coverage
+htmlcov/
+
+# Temporary files
+*.tmp
+*.temp
