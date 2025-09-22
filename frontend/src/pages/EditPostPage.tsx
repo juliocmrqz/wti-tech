@@ -16,14 +16,21 @@ import { Save, ArrowBack } from '@mui/icons-material'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useSelector, useDispatch } from 'react-redux'
 import { RootState, AppDispatch } from '../store/store'
-import { updatePost, fetchPost, clearCurrentPost } from '../store/slices/postsSlice'
+import {
+  updatePost,
+  fetchPost,
+  clearCurrentPost,
+  clearSuccessMessage
+} from '../store/slices/postsSlice'
 import { POST_CATEGORIES, POST_VALIDATION } from '../utils/constants'
 
 const EditPostPage: React.FC = () => {
   const navigate = useNavigate()
   const dispatch = useDispatch<AppDispatch>()
   const { id } = useParams<{ id: string }>()
-  const { currentPost, isLoading, error } = useSelector((state: RootState) => state.posts)
+  const { currentPost, isLoading, error, successMessage } = useSelector(
+    (state: RootState) => state.posts
+  )
   const { user } = useSelector((state: RootState) => state.auth)
 
   const [formData, setFormData] = useState({
@@ -41,6 +48,7 @@ const EditPostPage: React.FC = () => {
 
     return () => {
       dispatch(clearCurrentPost())
+      dispatch(clearSuccessMessage())
     }
   }, [dispatch, id])
 
@@ -59,6 +67,17 @@ const EditPostPage: React.FC = () => {
       })
     }
   }, [currentPost, user, navigate])
+
+  // Auto-clear success message after 5 seconds
+  useEffect(() => {
+    if (successMessage) {
+      const timer = setTimeout((): void => {
+        dispatch(clearSuccessMessage())
+      }, 3000)
+
+      return () => clearTimeout(timer)
+    }
+  }, [successMessage, dispatch])
 
   const validateForm = () => {
     const errors: Record<string, string> = {}
@@ -99,7 +118,7 @@ const EditPostPage: React.FC = () => {
 
     try {
       await dispatch(updatePost(updateData)).unwrap()
-      navigate('/posts')
+      // navigate('/posts')
     } catch (error) {
       console.error('Failed to update post:', error)
     } finally {
@@ -168,6 +187,12 @@ const EditPostPage: React.FC = () => {
       {error && (
         <Alert severity="error" sx={{ mb: 3 }}>
           {error}
+        </Alert>
+      )}
+
+      {successMessage && (
+        <Alert severity="success" sx={{ mb: 3 }} onClose={() => dispatch(clearSuccessMessage())}>
+          {successMessage}
         </Alert>
       )}
 

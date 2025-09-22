@@ -33,6 +33,7 @@ export interface PostsState {
   currentPost: Post | null
   isLoading: boolean
   error: string | null
+  successMessage: string | null
   pagination: {
     page: number
     limit: number
@@ -45,6 +46,7 @@ const initialState: PostsState = {
   currentPost: null,
   isLoading: false,
   error: null,
+  successMessage: null,
   pagination: {
     page: 1,
     limit: 20,
@@ -189,6 +191,9 @@ const postsSlice = createSlice({
     clearError: (state) => {
       state.error = null
     },
+    clearSuccessMessage: (state) => {
+      state.successMessage = null
+    },
     setPagination: (state, action: PayloadAction<{ page: number; limit: number }>) => {
       state.pagination = { ...state.pagination, ...action.payload }
     }
@@ -239,9 +244,11 @@ const postsSlice = createSlice({
       .addCase(updatePost.pending, (state) => {
         state.isLoading = true
         state.error = null
+        state.successMessage = null
       })
       .addCase(updatePost.fulfilled, (state, action) => {
         state.isLoading = false
+        state.successMessage = 'Post updated successfully!'
         const index = state.posts.findIndex((post) => post.id === action.payload.id)
         if (index !== -1) {
           state.posts[index] = action.payload
@@ -253,6 +260,7 @@ const postsSlice = createSlice({
       .addCase(updatePost.rejected, (state, action) => {
         state.isLoading = false
         state.error = (action.payload as string) || 'Failed to update post'
+        state.successMessage = null
       })
       // Delete post
       .addCase(deletePost.pending, (state) => {
@@ -273,5 +281,6 @@ const postsSlice = createSlice({
   }
 })
 
-export const { clearCurrentPost, clearError, setPagination } = postsSlice.actions
+export const { clearCurrentPost, clearError, clearSuccessMessage, setPagination } =
+  postsSlice.actions
 export default postsSlice.reducer
